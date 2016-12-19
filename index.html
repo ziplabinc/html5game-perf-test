@@ -1,0 +1,188 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8">
+
+        <title>Pixi.js - DOM/Canvas/WebGL Performance Tester</title>
+
+        <style>
+            * { color: white; }
+            #screen { position: absolute; top: 0px; left: 0px; z-index: -1; }
+			.bunny { position: absolute; width: 26px; height: 37px; background-image: url(bunny.png); top: 0px; left: 0px; transform: translateX(50px); }
+            input[type=button] { color: black; }
+       </style>
+
+		<script src="pixi.dev.js"></script>
+        <script src="stats.min.js"></script>
+    </head>
+
+	<body>
+		<div id="wrapper">
+			<!--canvas id="view" width="960" height="720"></canvas-->
+
+			<div id="counter">0 bunnies</div>
+			<label>
+				<input type="button" id="bunny_100" class='bunny_button' value="100 Bunnies" />
+				<input type="button" id="bunny_200" class='bunny_button' value="200 Bunnies" />
+				<input type="button" id="bunny_500" class='bunny_button' value="500 Bunnies" />
+				<input type="button" id="bunny_1000" class='bunny_button' value="1000 Bunnies" />
+				<input type="button" id="bunny_2000" class='bunny_button' value="2000 Bunnies" />
+				<input type="button" id="bunny_5000" class='bunny_button' value="5000 Bunnies" />
+				<input type="button" id="bunny_-500" class='bunny_button' value="-500 Bunnies" />
+			</label>
+		</div>
+
+        <script>
+			/* PIXI 자체 animateFrame 제거, 메인 루틴에서 수동으로 돌려줌 */
+			window.ticker = PIXI.ticker.shared;
+			ticker.autoStart = false;
+			ticker.stop();
+
+			PIXI.SCALE_MODES.DEFAULT = PIXI.SCALE_MODES.NEAREST; // use nearest scaling so sprites are crisp and pixely
+
+			window.container = new PIXI.Container(0xFFFFFF); // create a sprite batch to contain our sprites
+			window.stage = new PIXI.Container(0xFFFFFF); // create an new instance of a pixi stage
+			stage.addChild(container); // add our container to the root
+			window.tx1 = PIXI.Texture.fromImage('bunny.png'); // create a texture from an image path
+
+            // create a renderer instance
+			window.engineType = "canvas";
+			switch ( engineType ) {
+				case 1:
+				case 'canvas':
+					var renderer = new PIXI.CanvasRenderer(window.innerWidth, window.innerHeight, null);
+					break;
+
+				case 2:
+				case 'webgl':
+					var renderer = new PIXI.WebGLRenderer(window.innerWidth, window.innerHeight, null);
+					break;
+
+				case 3:
+				case 'DOM':
+					var renderer = {}; //일단 오브젝트로 구색만 맞춤.
+					renderer.width = window.innerWidth;
+					renderer.height = window.innerHeight;
+					renderer.view = document.createElement("div");
+					break;
+
+				default:
+					var renderer = PIXI.autoDetectRenderer(window.innerWidth, window.innerHeight, null);
+					break;
+			} // End of switch.
+			if(engineType != 3) {
+				renderer.view.style.position = "absolute";
+				renderer.view.style.top = "0px";
+				renderer.view.style.left = "0px";
+				renderer.clearBeforeRender=true;
+				renderer.antialias=false;
+				renderer.preserveDrawingBuffer=false;
+			}
+			renderer.view.id = "screen";
+			document.querySelector("#wrapper").appendChild(renderer.view);
+
+			window.gravity = 0.75; // we are going to fake some gravity in the update loop
+			window.bunnyObjs = {};
+
+			//Stat Init
+            var stats = new Stats();
+            stats.domElement.style.position = 'absolute';
+            stats.domElement.style.top = '0';
+            stats.domElement.style.right = '0';
+            document.body.appendChild(stats.domElement);
+
+            // setup our tick method called each frame
+            animate();
+
+            function animate() {
+                stats.begin();
+
+                //for (var i = 0; i < container.children.length; ++i) {
+				//var bunny = container.children[i];
+				for(var key in window.bunnyObjs) {
+				   var bunny = window.bunnyObjs[key].pixiSprite;
+
+                    bunny.position.x += bunny.speedX;
+                    bunny.position.y += bunny.speedY;
+
+                    bunny.speedY += gravity;
+
+                    if (bunny.position.x > renderer.width) {
+                        bunny.speedX *= -1;
+                        bunny.position.x = renderer.width;
+                    }
+                    else if (bunny.position.x < 0) {
+                        bunny.speedX *= -1;
+                        bunny.position.x = 0;
+                    }
+
+                    if (bunny.position.y > renderer.height) {
+                        bunny.speedY *= -0.85;
+                        bunny.position.y = renderer.height;
+
+                        if (Math.random() > 0.5) {
+                            bunny.speedY -= Math.random() * 6;
+                        }
+                    }
+                    else if (bunny.position.y < 0) {
+                        bunny.speedY *= -1;
+                        bunny.position.y = 0;
+                    }
+                }
+                renderer.render(stage);
+
+                stats.end();
+
+				// start timer for next loop
+				requestAnimationFrame(animate);
+            }
+
+			//button event setting
+			window.counter = document.getElementById('counter');
+			window.bunny_buttons = document.querySelectorAll(".bunny_button");
+			for(var i=0; i<window.bunny_buttons.length; i++) {
+
+				window.bunny_buttons[i].addEventListener("click", function() {
+					var count = parseInt(this.id.split("_")[1]);
+					if(count > 0) {
+						for(var j=0; j<count; j++)	new BunnyObj(j);
+					}else {
+						var bnyKeys = Object.keys(window.bunnyObjs);
+						for(var j=0; j<Math.abs(count); j++) {
+							if(typeof bnyKeys[j] !== "undefined")
+								window.bunnyObjs[bnyKeys[j]].deleteObj();
+						}
+					}
+
+					counter.innerHTML = container.children.length + ' bunnies';
+				});
+			}
+
+			function BunnyObj(seq) {
+				this.bunnyId = (new Date()).getTime()+"_"+seq
+
+				if(window.engineType != 3) {
+					this.pixiSprite = new PIXI.Sprite(tx1);
+					this.pixiSprite.anchor.set(0.5, 1);
+				}else { //DOM
+					this.pixiSprite = {}; //일단 오브젝트로 구색만 맞춤.
+					this.pixiSprite.position = {x:0, y:0};
+					this.pixiSprite.anchor = {x:0.5, y:1};
+				}
+				this.pixiSprite.speedX = Math.random() * 5;
+				this.pixiSprite.speedY = (Math.random() * 5) - 5;
+
+				window.container.addChild(this.pixiSprite);
+				window.bunnyObjs[this.bunnyId] = this;
+			}
+			BunnyObj.prototype.constructor = BunnyObj;
+			BunnyObj.prototype.deleteObj= function() {
+				window.container.removeChild(this.pixiSprite);
+				//this.pixiSprite.removeAllListeners();
+				this.pixiSprite.destroy();
+
+				delete window.bunnyObjs[this.bunnyId];
+			}
+        </script>
+    </body>
+</html>
